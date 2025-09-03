@@ -1,0 +1,613 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+  previewFeatures = ["views"]  // Enable views support
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Restaurant {
+  restaurant_id       String          @id @default(uuid()) @db.Uuid
+  name                String
+  email               String?         @db.VarChar(255)
+  phone               String?         @db.VarChar(20)
+  address             String?         @db.Text
+  timezone            String?         @db.VarChar(50)
+  subscription_plan   String?         @db.VarChar(50)
+  currency            String          @default("INR") @db.VarChar(10)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+  is_active           Boolean         @default(true)
+
+  users               User[]
+  customers           Customer[]
+  tables              Table[]
+  table_reservations  TableReservation[]
+  menu_categories     MenuCategory[]
+  menu_items          MenuItem[]
+  modifier_groups     ModifierGroup[]
+  menu_modifiers      MenuModifier[]
+  tax_rates           TaxRate[]
+  orders              Order[]
+  inventory_items     InventoryItem[]
+  daily_sales         DailySale[]
+  promotions          Promotion[]
+  audit_logs          AuditLog[]
+
+  @@map("restaurants")
+}
+
+model User {
+  user_id             String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  username            String          @unique @db.VarChar(100)
+  email               String?         @db.VarChar(255)
+  password_hash       String?         @db.VarChar(255)
+  role                String          @db.VarChar(20)
+  full_name           String?         @db.VarChar(255)
+  is_active           Boolean         @default(true)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  orders              Order[]
+  shifts              Shift[]
+  audit_logs          AuditLog[]
+
+  @@index([restaurant_id], name: "idx_users_restaurant")
+  @@map("users")
+}
+
+model Customer {
+  customer_id         String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  phone               String?         @db.VarChar(20)
+  email               String?         @db.VarChar(255)
+  name                String?         @db.VarChar(255)
+  date_of_birth       DateTime?
+  anniversary         DateTime?
+  address             String?         @db.Text
+  loyalty_points      Int             @default(0)
+  customer_tier       String          @default("regular") @db.VarChar(20)
+  preferences         String?         @db.Text
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  table_reservations  TableReservation[]
+  orders              Order[]
+
+  @@unique([restaurant_id, phone], name: "unique_customer_phone_per_restaurant")
+  @@unique([restaurant_id, email], name: "unique_customer_email_per_restaurant")
+  @@index([phone], name: "idx_customers_phone")
+  @@index([restaurant_id], name: "idx_customers_restaurant")
+  @@map("customers")
+}
+
+model Table {
+  table_id            String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  table_number        String          @db.VarChar(20)
+  capacity            Int
+  section             String?         @db.VarChar(50)
+  status              String          @default("available") @db.VarChar(20)
+  qr_code_url         String?         @db.VarChar(500)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  table_reservations  TableReservation[]
+  orders              Order[]
+
+  @@unique([restaurant_id, table_number])
+  @@index([restaurant_id], name: "idx_tables_restaurant")
+  @@index([status], name: "idx_tables_status")
+  @@map("tables")
+}
+
+model TableReservation {
+  reservation_id      String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  table_id            String          @db.Uuid
+  customer_id         String?         @db.Uuid
+  customer_name       String          @db.VarChar(255)
+  customer_phone      String?         @db.VarChar(20)
+  party_size          Int
+  reservation_time    DateTime
+  duration_minutes    Int             @default(120)
+  status              String          @default("confirmed") @db.VarChar(20)
+  special_requests    String?         @db.Text
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  table               Table           @relation(fields: [table_id], references: [table_id], onDelete: Cascade)
+  customer            Customer?       @relation(fields: [customer_id], references: [customer_id], onDelete: SetNull)
+
+  @@index([table_id], name: "idx_reservations_table")
+  @@index([reservation_time], name: "idx_reservations_time")
+  @@index([restaurant_id, reservation_time, status], name: "idx_reservations_restaurant_time_status")
+  @@map("table_reservations")
+}
+
+model MenuCategory {
+  category_id         String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  name                String
+  display_order       Int?
+  is_active           Boolean         @default(true)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  menu_items          MenuItem[]
+
+  @@index([restaurant_id], name: "idx_categories_restaurant")
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  item_id             String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  category_id         String?         @db.Uuid
+  name                String
+  description         String?         @db.Text
+  price               Decimal
+  cost                Decimal?
+  is_available        Boolean         @default(true)
+  preparation_time    Int?
+  ingredients         String[]
+  allergens           String[]
+  image_url           String?         @db.VarChar(500)
+  is_vegetarian       Boolean         @default(false)
+  is_vegan            Boolean         @default(false)
+  is_gluten_free      Boolean         @default(false)
+  spice_level         Int?            @db.Integer
+  calories            Int?
+  nutritional_info    Json?
+  tags                String[]
+  sku                 String?         @unique
+  display_order       Int?
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  category            MenuCategory?   @relation(fields: [category_id], references: [category_id], onDelete: SetNull)
+  item_modifier_groups ItemModifierGroup[]
+  order_items         OrderItem[]
+
+  @@index([restaurant_id], name: "idx_items_restaurant")
+  @@index([category_id], name: "idx_items_category")
+  @@index([tags], type: Gin, name: "idx_menu_items_tags")
+  @@index([is_vegetarian, is_vegan, is_gluten_free], name: "idx_menu_items_dietary")
+  @@map("menu_items")
+}
+
+model ModifierGroup {
+  group_id            String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  name                String
+  selection_type      String          @default("single") @db.VarChar(20)
+  min_selections      Int             @default(0)
+  max_selections      Int?
+  is_required         Boolean         @default(false)
+  display_order       Int             @default(0)
+  is_active           Boolean         @default(true)
+  created_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  modifier_group_items ModifierGroupItem[]
+  item_modifier_groups ItemModifierGroup[]
+
+  @@map("modifier_groups")
+}
+
+model MenuModifier {
+  modifier_id         String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  name                String
+  type                String          @db.VarChar(50)
+  price_adjustment    Decimal         @default(0)
+  is_active           Boolean         @default(true)
+  display_order       Int             @default(0)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  modifier_group_items ModifierGroupItem[]
+  order_item_modifiers OrderItemModifier[]
+
+  @@map("menu_modifiers")
+}
+
+model ModifierGroupItem {
+  group_id            String          @db.Uuid
+  modifier_id         String          @db.Uuid
+  is_default          Boolean         @default(false)
+  display_order       Int             @default(0)
+
+  modifier_group      ModifierGroup   @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+  menu_modifier       MenuModifier    @relation(fields: [modifier_id], references: [modifier_id], onDelete: Cascade)
+
+  @@id([group_id, modifier_id])
+  @@map("modifier_group_items")
+}
+
+model ItemModifierGroup {
+  item_id             String          @db.Uuid
+  group_id            String          @db.Uuid
+  is_required         Boolean         @default(false)
+  display_order       Int             @default(0)
+
+  menu_item           MenuItem        @relation(fields: [item_id], references: [item_id], onDelete: Cascade)
+  modifier_group      ModifierGroup   @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+
+  @@id([item_id, group_id])
+  @@map("item_modifier_groups")
+}
+
+model TaxRate {
+  tax_id              String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  tax_name            String          @db.VarChar(100)
+  tax_percentage      Decimal
+  tax_type            String          @default("exclusive") @db.VarChar(20)
+  applies_to          String          @default("all") @db.VarChar(20)
+  is_compound         Boolean         @default(false)
+  display_order       Int             @default(0)
+  is_active           Boolean         @default(true)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  order_taxes         OrderTax[]
+
+  @@map("tax_rates")
+}
+
+model Order {
+  order_id            String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  customer_id         String?         @db.Uuid
+  user_id             String?         @db.Uuid
+  table_id            String?         @db.Uuid
+  order_number        String?         @unique @db.VarChar(50)
+  order_type          String          @db.VarChar(20)
+  status              String          @db.VarChar(20)
+  subtotal            Decimal?
+  tax_amount          Decimal?
+  discount_amount     Decimal         @default(0)
+  total_amount        Decimal?
+  notes               String?         @db.Text
+  estimated_completion_time DateTime?
+  actual_completion_time DateTime?
+  delivery_address    String?         @db.Text
+  delivery_instructions String?       @db.Text
+  customer_instructions String?       @db.Text
+  loyalty_points_earned Int          @default(0)
+  loyalty_points_redeemed Int        @default(0)
+  source              String          @default("pos") @db.VarChar(20)
+  payment_status      String          @default("pending") @db.VarChar(20)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+  completed_at        DateTime?
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  customer            Customer?       @relation(fields: [customer_id], references: [customer_id], onDelete: SetNull)
+  user                User?           @relation(fields: [user_id], references: [user_id], onDelete: SetNull)
+  table               Table?          @relation(fields: [table_id], references: [table_id], onDelete: SetNull)
+  order_items         OrderItem[]
+  order_taxes         OrderTax[]
+  payments            Payment[]
+
+  @@index([restaurant_id], name: "idx_orders_restaurant")
+  @@index([customer_id], name: "idx_orders_customer")
+  @@index([status], name: "idx_orders_status")
+  @@index([created_at], name: "idx_orders_created_at")
+  @@index([order_number], name: "idx_orders_order_number")
+  @@index([table_id], name: "idx_orders_table")
+  @@index([source], name: "idx_orders_source")
+  @@index([payment_status], name: "idx_orders_payment_status")
+  @@index([restaurant_id, status, created_at], name: "idx_orders_restaurant_status_date")
+  @@index([restaurant_id, user_id, created_at], name: "idx_orders_restaurant_user_date")
+  @@map("orders")
+}
+
+model OrderItem {
+  order_item_id       String          @id @default(uuid()) @db.Uuid
+  order_id            String          @db.Uuid
+  item_id             String?         @db.Uuid
+  line_number         Int?
+  quantity            Int
+  unit_price          Decimal?
+  cost_per_unit       Decimal?
+  discount_amount     Decimal         @default(0)
+  modifiers_total     Decimal         @default(0)
+  total_price         Decimal?
+  special_instructions String?        @db.Text
+  item_notes          String?         @db.Text
+  status              String          @db.VarChar(20)
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @default(now())
+
+  order               Order           @relation(fields: [order_id], references: [order_id], onDelete: Cascade)
+  menu_item           MenuItem?       @relation(fields: [item_id], references: [item_id], onDelete: SetNull)
+  order_item_modifiers OrderItemModifier[]
+
+  @@unique([order_id, line_number])
+  @@index([order_id], name: "idx_order_items_order")
+  @@map("order_items")
+}
+
+model OrderItemModifier {
+  order_item_modifier_id String          @id @default(uuid()) @db.Uuid
+  order_item_id       String          @db.Uuid
+  modifier_id         String          @db.Uuid
+  modifier_name       String
+  price_adjustment    Decimal
+  quantity            Int             @default(1)
+  created_at          DateTime        @default(now())
+
+  order_item          OrderItem       @relation(fields: [order_item_id], references: [order_item_id], onDelete: Cascade)
+  menu_modifier       MenuModifier    @relation(fields: [modifier_id], references: [modifier_id], onDelete: Restrict)
+
+  @@index([order_item_id], name: "idx_order_item_modifiers_order_item")
+  @@map("order_item_modifiers")
+}
+
+model OrderTax {
+  order_tax_id        String          @id @default(uuid()) @db.Uuid
+  order_id            String          @db.Uuid
+  tax_id              String          @db.Uuid
+  tax_name            String
+  tax_percentage      Decimal
+  taxable_amount      Decimal
+  tax_amount          Decimal
+  created_at          DateTime        @default(now())
+
+  order               Order           @relation(fields: [order_id], references: [order_id], onDelete: Cascade)
+  tax_rate            TaxRate         @relation(fields: [tax_id], references: [tax_id], onDelete: Restrict)
+
+  @@index([order_id], name: "idx_order_taxes_order")
+  @@map("order_taxes")
+}
+
+model Payment {
+  payment_id          String          @id @default(uuid()) @db.Uuid
+  order_id            String          @db.Uuid
+  amount              Decimal
+  payment_method      String          @db.VarChar(20)
+  transaction_id      String?         @db.VarChar(255)
+  status              String          @db.VarChar(20)
+  refund_reference    String?         @db.VarChar(255)
+  processed_at        DateTime        @default(now())
+
+  order               Order           @relation(fields: [order_id], references: [order_id], onDelete: Cascade)
+
+  @@index([order_id], name: "idx_payments_order")
+  @@map("payments")
+}
+
+model InventoryItem {
+  inventory_id        String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  name                String
+  current_stock       Float?
+  min_stock_level     Float?
+  unit                String?         @db.VarChar(50)
+  cost_per_unit       Decimal?
+  last_updated        DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+
+  @@index([restaurant_id], name: "idx_inventory_restaurant")
+  @@map("inventory_items")
+}
+
+model Shift {
+  shift_id            String          @id @default(uuid()) @db.Uuid
+  user_id             String          @db.Uuid
+  start_time          DateTime?
+  end_time            DateTime?
+  break_duration      Int             @default(0)
+  sales_total         Decimal         @default(0)
+  created_at          DateTime        @default(now())
+
+  user                User            @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  
+  @@index([user_id], name: "idx_shifts_user")
+  @@map("shifts")
+}
+
+model DailySale {
+  sales_id            String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  sales_date          DateTime
+  total_orders        Int?
+  total_revenue       Decimal?
+  avg_order_value     Decimal?
+  created_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+
+  @@index([restaurant_id], name: "idx_sales_restaurant")
+  @@index([sales_date], name: "idx_sales_date")
+  @@map("daily_sales")
+}
+
+model Promotion {
+  promotion_id        String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  name                String
+  discount_type       String          @db.VarChar(20)
+  discount_value      Decimal?
+  min_order_amount    Decimal?
+  valid_from          DateTime?
+  valid_to            DateTime?
+  is_active           Boolean         @default(true)
+  created_at          DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+
+  @@map("promotions")
+}
+
+model AuditLog {
+  log_id              String          @id @default(uuid()) @db.Uuid
+  restaurant_id       String          @db.Uuid
+  user_id             String?         @db.Uuid
+  table_name          String?         @db.VarChar(100)
+  operation           String          @db.VarChar(20)
+  record_id           String?
+  old_values          Json?
+  new_values          Json?
+  timestamp           DateTime        @default(now())
+
+  restaurant          Restaurant      @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade)
+  user                User?           @relation(fields: [user_id], references: [user_id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+// Updated OrderDetailsView with additional fields
+view OrderDetailsView {
+  order_id                  String    @unique
+  order_number              String?
+  restaurant_id             String
+  restaurant_name           String
+  currency                  String
+  customer_id               String?
+  customer_name             String?
+  customer_phone            String?
+  customer_email            String?
+  loyalty_points            Int?
+  customer_tier             String?
+  table_id                  String?
+  table_number              String?
+  table_section             String?
+  table_capacity            Int?
+  order_type                String
+  order_status              String
+  subtotal                  Decimal?
+  tax_amount                Decimal?
+  discount_amount           Decimal?
+  total_amount              Decimal?
+  loyalty_points_earned     Int?
+  loyalty_points_redeemed   Int?
+  order_source              String?
+  payment_status            String?
+  payment_status_display    String?
+  notes                     String?
+  estimated_completion_time DateTime?
+  actual_completion_time    DateTime?
+  delivery_address          String?
+  order_created_at          DateTime
+  order_updated_at          DateTime?
+  completed_at              DateTime?
+  cashier_name              String?
+  cashier_username          String?
+  cashier_role              String?
+  total_items               Int?
+  order_age_minutes         Float?
+
+  @@map("order_details_view")
+}
+
+// Updated AvailableTablesView with reservation details
+view AvailableTablesView {
+  table_id                    String    @unique
+  restaurant_id               String
+  restaurant_name             String
+  table_number                String
+  capacity                    Int
+  section                     String?
+  base_status                 String
+  qr_code_url                 String?
+  created_at                  DateTime
+  updated_at                  DateTime
+  reservation_id              String?
+  reserved_customer_name      String?
+  reserved_customer_phone     String?
+  reserved_party_size         Int?
+  reservation_time            DateTime?
+  reservation_duration        Int?
+  special_requests            String?
+  active_order_id             String?
+  active_order_number         String?
+  active_order_status         String?
+  current_status              String
+  is_available                Boolean
+  next_reservation_time       DateTime?
+  next_customer_name          String?
+
+  @@map("available_tables_view")
+}
+
+// Additional useful views
+view MenuItemsView {
+  item_id                   String    @unique
+  restaurant_id             String
+  restaurant_name           String
+  currency                  String
+  category_id               String?
+  category_name             String?
+  item_name                 String
+  description               String?
+  price                     Decimal
+  cost                      Decimal?
+  is_available              Boolean
+  preparation_time          Int?
+  ingredients               String[]
+  allergens                 String[]
+  image_url                 String?
+  is_vegetarian             Boolean
+  is_vegan                  Boolean
+  is_gluten_free            Boolean
+  spice_level               Int?
+  calories                  Int?
+  tags                      String[]
+  sku                       String?
+  display_order             Int?
+  profit_margin_percent     Decimal?
+
+  @@map("menu_items_view")
+}
+
+view DailySalesSummary {
+  restaurant_id                   String
+  restaurant_name                 String
+  sales_date                      DateTime  @unique
+  total_orders                    Int
+  unique_customers                Int
+  total_revenue                   Decimal
+  avg_order_value                 Decimal
+  total_discounts                 Decimal
+  total_loyalty_points_earned     Int
+  dine_in_orders                  Int
+  takeaway_orders                 Int
+  delivery_orders                 Int
+
+  @@map("daily_sales_summary")
+}
+
+view CustomerLoyaltyView {
+  customer_id             String    @unique
+  restaurant_id           String
+  restaurant_name         String
+  customer_name           String?
+  phone                   String?
+  email                   String?
+  loyalty_points          Int
+  customer_tier           String
+  total_orders            Int
+  total_spent             Decimal
+  avg_order_value         Decimal
+  last_order_date         DateTime?
+  days_since_last_order   Float?
+
+  @@map("customer_loyalty_view")
+}
+
