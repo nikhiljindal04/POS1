@@ -13,7 +13,7 @@ export const signUpSchema = Joi.object({
   username: Joi.string().min(3).max(100).required(),
   email: Joi.string().email().optional(),
   password: Joi.string().min(8).required(),
-  fullName: Joi.string().min(2).max(255).optional(),
+  full_name: Joi.string().min(2).max(255).optional(),
   role: Joi.string().valid('admin').default('admin')
 });
 

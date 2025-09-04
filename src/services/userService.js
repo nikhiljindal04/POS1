@@ -1,7 +1,7 @@
 import prisma from '../config/database.js';
 import passwordService from './passwordService.js';
 import logger from '../utils/logger.js';
-import { ERROR_MESSAGES } from '../utils/constants.js';
+import { ERROR_MESSAGES, USER_ROLES } from '../utils/constants.js';
 
 class UserService {
   async getUserProfile(userId) {
@@ -126,6 +126,311 @@ class UserService {
       };
     } catch (error) {
       logger.error('Change password failed:', error);
+      throw error;
+    }
+  }
+
+  // New methods for user management
+  async createUser(adminUserId, userData) {
+    try {
+      const { username, email, password, full_name, role } = userData;
+
+      // Get admin user to verify restaurant
+      const adminUser = await prisma.user.findUnique({
+        where: { user_id: adminUserId },
+        select: { restaurant_id: true, role: true }
+      });
+
+      if (!adminUser || adminUser.role !== USER_ROLES.ADMIN) {
+        throw new Error('Only admin users can create other users');
+      }
+
+      // Validate password strength
+      const passwordValidation = passwordService.validatePasswordStrength(password);
+      if (!passwordValidation.isValid) {
+        throw new Error(passwordValidation.errors.join(', '));
+      }
+
+      // Check if username already exists in the database
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          username,
+        }
+      });
+
+      if (existingUser) {
+        throw new Error('Username already exists in the database');
+      }
+
+      // Check if email already exists in the database (if provided)
+      if (email) {
+        const existingEmail = await prisma.user.findFirst({
+          where: {
+            email,
+          }
+        });
+
+        if (existingEmail) {
+          throw new Error('Email already exists in the database');
+        }
+      }
+
+      // Hash password
+      const hashedPassword = await passwordService.hashPassword(password);
+
+      // Create user
+      const newUser = await prisma.user.create({
+        data: {
+          restaurant_id: adminUser.restaurant_id,
+          username,
+          email,
+          password_hash: hashedPassword,
+          full_name,
+          role,
+          is_active: true
+        },
+        select: {
+          user_id: true,
+          username: true,
+          email: true,
+          full_name: true,
+          role: true,
+          is_active: true,
+          created_at: true
+        }
+      });
+
+      logger.info(`New user created: ${username} with role: ${role} by admin: ${adminUserId}`);
+
+      return {
+        success: true,
+        data: newUser
+      };
+    } catch (error) {
+      logger.error('Create user failed:', error);
+      throw error;
+    }
+  }
+
+  async getAllUsers(adminUserId, filters = {}) {
+    try {
+      // Get admin user to verify restaurant
+      const adminUser = await prisma.user.findUnique({
+        where: { user_id: adminUserId },
+        select: { restaurant_id: true, role: true }
+      });
+
+      if (!adminUser || adminUser.role !== USER_ROLES.ADMIN) {
+        throw new Error('Only admin users can view all users');
+      }
+
+      const { role, is_active, page = 1, limit = 10 } = filters;
+      
+      const where = {
+        restaurant_id: adminUser.restaurant_id,
+        role: { not: USER_ROLES.ADMIN }, // Exclude admin users from the list
+        ...(role && { role }),
+        ...(is_active !== undefined && { is_active })
+      };
+
+      const [users, total] = await prisma.$transaction([
+        prisma.user.findMany({
+          where,
+          select: {
+            user_id: true,
+            username: true,
+            email: true,
+            full_name: true,
+            role: true,
+            is_active: true,
+            created_at: true,
+            updated_at: true
+          },
+          skip: (page - 1) * limit,
+          take: parseInt(limit),
+          orderBy: { created_at: 'desc' }
+        }),
+        prisma.user.count({ where })
+      ]);
+
+      return {
+        success: true,
+        data: {
+          users,
+          pagination: {
+            total,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            pages: Math.ceil(total / limit)
+          }
+        }
+      };
+    } catch (error) {
+      logger.error('Get all users failed:', error);
+      throw error;
+    }
+  }
+
+  async getUserById(adminUserId, targetUserId) {
+    try {
+      // Get admin user to verify restaurant
+      const adminUser = await prisma.user.findUnique({
+        where: { user_id: adminUserId },
+        select: { restaurant_id: true, role: true }
+      });
+
+      if (!adminUser || adminUser.role !== USER_ROLES.ADMIN) {
+        throw new Error('Only admin users can view other user details');
+      }
+
+      const user = await prisma.user.findFirst({
+        where: {
+          user_id: targetUserId,
+          restaurant_id: adminUser.restaurant_id,
+          role: { not: USER_ROLES.ADMIN } // Cannot view other admin users
+        },
+        select: {
+          user_id: true,
+          username: true,
+          email: true,
+          full_name: true,
+          role: true,
+          is_active: true,
+          created_at: true,
+          updated_at: true
+        }
+      });
+
+      if (!user) {
+        throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
+      }
+
+      return {
+        success: true,
+        data: user
+      };
+    } catch (error) {
+      logger.error('Get user by ID failed:', error);
+      throw error;
+    }
+  }
+
+  async updateUser(adminUserId, targetUserId, updateData) {
+    try {
+      // Get admin user to verify restaurant
+      const adminUser = await prisma.user.findUnique({
+        where: { user_id: adminUserId },
+        select: { restaurant_id: true, role: true }
+      });
+
+      if (!adminUser || adminUser.role !== USER_ROLES.ADMIN) {
+        throw new Error('Only admin users can update other users');
+      }
+
+      // Check if target user exists and belongs to same restaurant
+      const targetUser = await prisma.user.findFirst({
+        where: {
+          user_id: targetUserId,
+          restaurant_id: adminUser.restaurant_id,
+          role: { not: USER_ROLES.ADMIN } // Cannot update other admin users
+        }
+      });
+
+      if (!targetUser) {
+        throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
+      }
+
+      const { full_name, email, role, is_active } = updateData;
+
+      // Check if email already exists (if being updated)
+      if (email && email !== targetUser.email) {
+        const existingEmail = await prisma.user.findFirst({
+          where: {
+            email,
+            restaurant_id: adminUser.restaurant_id,
+            user_id: { not: targetUserId }
+          }
+        });
+
+        if (existingEmail) {
+          throw new Error('Email already exists in this restaurant');
+        }
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { user_id: targetUserId },
+        data: {
+          ...(full_name && { full_name }),
+          ...(email && { email }),
+          ...(role && { role }),
+          ...(is_active !== undefined && { is_active }),
+          updated_at: new Date()
+        },
+        select: {
+          user_id: true,
+          username: true,
+          email: true,
+          full_name: true,
+          role: true,
+          is_active: true,
+          updated_at: true
+        }
+      });
+
+      logger.info(`User updated: ${targetUserId} by admin: ${adminUserId}`);
+
+      return {
+        success: true,
+        data: updatedUser
+      };
+    } catch (error) {
+      logger.error('Update user failed:', error);
+      throw error;
+    }
+  }
+
+  async deleteUser(adminUserId, targetUserId) {
+    try {
+      // Get admin user to verify restaurant
+      const adminUser = await prisma.user.findUnique({
+        where: { user_id: adminUserId },
+        select: { restaurant_id: true, role: true }
+      });
+
+      if (!adminUser || adminUser.role !== USER_ROLES.ADMIN) {
+        throw new Error('Only admin users can delete other users');
+      }
+
+      // Check if target user exists and belongs to same restaurant
+      const targetUser = await prisma.user.findFirst({
+        where: {
+          user_id: targetUserId,
+          restaurant_id: adminUser.restaurant_id,
+          role: { not: USER_ROLES.ADMIN } // Cannot delete other admin users
+        }
+      });
+
+      if (!targetUser) {
+        throw new Error(ERROR_MESSAGES.USER_NOT_FOUND);
+      }
+
+      // Soft delete by setting is_active to false
+      await prisma.user.update({
+        where: { user_id: targetUserId },
+        data: {
+          is_active: false,
+          updated_at: new Date()
+        }
+      });
+
+      logger.info(`User deleted: ${targetUserId} by admin: ${adminUserId}`);
+
+      return {
+        success: true,
+        message: 'User deleted successfully'
+      };
+    } catch (error) {
+      logger.error('Delete user failed:', error);
       throw error;
     }
   }

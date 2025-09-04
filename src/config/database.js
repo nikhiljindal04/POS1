@@ -3,7 +3,7 @@ import { PrismaClient } from '../../generated/prisma/index.js';
 import logger from '../utils/logger.js';
 
 const prisma = new PrismaClient({
-  log: ['query', 'info', 'warn', 'error'],
+  log: ['info', 'warn', 'error'],
 });
 
 prisma.$on('error', (e) => {

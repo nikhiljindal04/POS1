@@ -12,7 +12,7 @@ class AuthService {
         username, 
         email, 
         password, 
-        fullName, 
+        full_name, 
         role = USER_ROLES.ADMIN 
       } = userData;
 
@@ -58,7 +58,7 @@ class AuthService {
             email,
             password_hash: hashedPassword,
             role,
-            full_name: fullName,
+            full_name,
             is_active: true
           },
           include: {
