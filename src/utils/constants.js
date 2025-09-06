@@ -32,3 +32,10 @@ export const ERROR_MESSAGES = {
   TOKEN_EXPIRED: 'Token expired',
   INVALID_TOKEN: 'Invalid token'
 };
+
+export const TABLE_STATUS = {
+  AVAILABLE: 'available',
+  OCCUPIED: 'occupied',
+  RESERVED: 'reserved',
+  MAINTENANCE: 'maintenance'
+};

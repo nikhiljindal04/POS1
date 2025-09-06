@@ -1,12 +1,14 @@
 import { HTTP_STATUS } from '../utils/constants.js';
 import logger from '../utils/logger.js';
 
-export const validate = (schema) => {
+export const validate = (schema, target = 'body') => {
   return (req, res, next) => {
-    const { error, value } = schema.validate(req.body, { 
+    const dataToValidate = target === 'query' ? req.query : req.body;
+    
+    const { error, value } = schema.validate(dataToValidate, { 
       abortEarly: false,
-      stripUnknown: true 
-      //This tells Joi: : “Remove any fields from the request body that are not defined in the schema.”
+      stripUnknown: true,
+      convert: true // Convert string numbers to actual numbers
     });
 
     if (error) {
@@ -20,7 +22,16 @@ export const validate = (schema) => {
       });
     }
 
-    req.body = value;
+    if (target === 'query') {
+      // Instead of replacing req.query, modify individual properties
+      Object.keys(value).forEach(key => {
+        req.query[key] = value[key];
+      });
+    } else {
+      req.body = value;
+    }
+    
     next();
   };
 };
+
