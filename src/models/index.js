@@ -1,3 +1,4 @@
 import User from './User.js';
+import Menu from './Menu.js';
 
-export { User };
+export { User, Menu };
